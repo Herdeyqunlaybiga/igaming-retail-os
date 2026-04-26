@@ -1,223 +1,196 @@
-"""
-╔══════════════════════════════════════════════════════════════╗
-║   Q1 2026 EXECUTIVE SALES INTELLIGENCE DASHBOARD             ║
-║   Production-Grade · Executive & Regional Leadership View    ║
-╚══════════════════════════════════════════════════════════════╝
-
-Run:
-    pip install streamlit pandas plotly openpyxl
-    streamlit run q1_executive_dashboard.py
-
-Place your CSV in the same directory, or upload via the sidebar.
-"""
-
-# ─── Standard library ────────────────────────────────────────────────────────
-import io
-import re
-import warnings
-warnings.filterwarnings("ignore")
-
-# ─── Third-party ─────────────────────────────────────────────────────────────
-import numpy as np
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
+import numpy as np
+import re
+import io
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 0 · PAGE BOOTSTRAP
-# ══════════════════════════════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="Q1 2026 | Executive Dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# 1. PAGE CONFIG & THEME
+st.set_page_config(page_title="iGaming Retail OS | Q1 2026", layout="wide", page_icon="🚀")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 1 · DESIGN SYSTEM
-# ══════════════════════════════════════════════════════════════════════════════
+# Professional Design System
 PALETTE = {
-    "bg_main":       "#070B14",
-    "bg_card":       "#0D1525",
-    "bg_card_hover": "#111C30",
-    "bg_subtle":     "#111928",
-    "border":        "#1E2D45",
-    "border_bright": "#2A3F5F",
-    "text_primary":  "#E8EDF5",
-    "text_secondary":"#7A8BAD",
-    "text_muted":    "#4A5568",
-    "accent_blue":   "#3B7DD8",
-    "accent_teal":   "#0EA5A0",
-    "accent_green":  "#22C55E",
-    "accent_amber":  "#F59E0B",
-    "accent_red":    "#EF4444",
-    "accent_purple": "#8B5CF6",
-    "gold":          "#F0C040",
-    "chart_1":       "#3B7DD8",
-    "chart_2":       "#0EA5A0",
-    "chart_3":       "#8B5CF6",
-    "chart_4":       "#F59E0B",
-    "chart_5":       "#EF4444",
+    "bg": "#070B14", "card": "#0D1525", "border": "#1E2D45",
+    "text": "#E8EDF5", "muted": "#7A8BAD", "accent": "#3B7DD8",
+    "green": "#22C55E", "red": "#EF4444", "amber": "#F59E0B"
 }
 
+# Fixed Plotly Template to prevent previous errors
 PLOTLY_TEMPLATE = dict(
     layout=dict(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#0D1525",
-        font=dict(color=PALETTE["text_secondary"], family="Inter, system-ui, sans-serif"),
-        colorway=[PALETTE["chart_1"], PALETTE["chart_2"], PALETTE["chart_3"],
-                  PALETTE["chart_4"], PALETTE["chart_5"]],
-        xaxis=dict(gridcolor="#1E2D45", linecolor="#1E2D45",
-                   tickfont=dict(color=PALETTE["text_secondary"])),
-        yaxis=dict(gridcolor="#1E2D45", linecolor="#1E2D45",
-                   tickfont=dict(color=PALETTE["text_secondary"])),
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=PALETTE["text_secondary"])),
-        hoverlabel=dict(bgcolor="#1E2D45", bordercolor="#2A3F5F",
-                        font=dict(color=PALETTE["text_primary"])),
-        margin=dict(l=10, r=10, t=50, b=10),
-        title=dict(font=dict(color=PALETTE["text_primary"], size=15)),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=PALETTE["text"]), margin=dict(l=10, r=10, t=40, b=10)
     )
 )
 
-def apply_theme(fig, height=380):
-    fig.update_layout(**PLOTLY_TEMPLATE["layout"], height=height)
-    return fig
+st.markdown(f"""
+    <style>
+    .stApp {{ background-color: {PALETTE['bg']}; color: {PALETTE['text']}; }}
+    [data-testid="stMetricValue"] {{ color: {PALETTE['accent']}; font-weight: 800; }}
+    .kpi-card {{
+        background: {PALETTE['card']}; border: 1px solid {PALETTE['border']};
+        border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 15px;
+    }}
+    .stTabs [data-baseweb="tab-list"] {{ background-color: {PALETTE['card']}; border-radius: 10px; padding: 5px; }}
+    </style>
+""", unsafe_allow_html=True)
 
-CSS = f"""
-<style>
-html, body, [data-testid="stAppViewContainer"] {{ background: {PALETTE['bg_main']}; color: {PALETTE['text_primary']}; }}
-[data-testid="stHeader"] {{ background: transparent; }}
-[data-testid="stSidebar"] {{ background: {PALETTE['bg_card']}; border-right: 1px solid {PALETTE['border']}; }}
-.kpi-wrap {{
-    background: {PALETTE['bg_card']}; border: 1px solid {PALETTE['border']};
-    border-radius: 14px; padding: 22px 24px 18px; position: relative;
-}}
-.kpi-value {{ font-size: 28px; font-weight: 800; color: {PALETTE['text_primary']}; }}
-.sec-header {{ border-bottom: 1px solid {PALETTE['border']}; padding-bottom: 10px; margin: 28px 0 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: {PALETTE['text_muted']}; }}
-.leader-row {{ background: {PALETTE['bg_card']}; border: 1px solid {PALETTE['border']}; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 14px; }}
-.badge {{ padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; }}
-.badge-red {{ background: rgba(239,68,68,0.15); color: {PALETTE['accent_red']}; }}
-.badge-green {{ background: rgba(34,197,94,0.15); color: {PALETTE['accent_green']}; }}
-</style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
+# 2. HELPERS
+def ngn(v):
+    if pd.isna(v): return "₦0"
+    if abs(v) >= 1e9: return f"₦{v/1e9:,.2f}B"
+    if abs(v) >= 1e6: return f"₦{v/1e6:,.1f}M"
+    return f"₦{v:,.0f}"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 2 · CONSTANTS & HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-Q1_TARGET = 40_319_855_099.94
-FIN_COLS = ["SALES", "COMMISSION", "GGR", "NGR", "SB Sales", "SB GGR", "LB Sales", "LB GGR", "GB Sales", "GB GGR", "GR Sales", "GR GGR", "DEPOSITS", "WITHDRAWALS", "EXPENSES", "NET"]
-PRODUCTS = {"Sportsbook": ("SB Sales", "SB GGR", "#3B7DD8"), "Lucky Balls": ("LB Sales", "LB GGR", "#F59E0B"), "Global Bet": ("GB Sales", "GB GGR", "#0EA5A0"), "Greentube": ("GR Sales", "GR GGR", "#8B5CF6")}
-
-def ngn(v, full=False):
-    if pd.isna(v) or v == 0: return "₦0"
-    neg = v < 0
-    v = abs(v)
-    if not full:
-        if v >= 1e9: s = f"₦{v/1e9:,.2f}B"
-        elif v >= 1e6: s = f"₦{v/1e6:,.2f}M"
-        else: s = f"₦{v:,.0f}"
-    else: s = f"₦{v:,.0f}"
-    return f"-{s}" if neg else s
-
-def pct(v, denom):
-    return f"{v/denom*100:.1f}%" if denom != 0 else "0.0%"
-
-def clean_num(val):
-    if pd.isna(val): return 0.0
-    s = re.sub(r"[₦,%↑↓\s]", "", str(val)).replace("(", "-").replace(")", "")
-    try: return float(s)
+def clean_fin(val):
+    try:
+        s = re.sub(r"[₦,%↑↓\s]", "", str(val)).replace("(", "-").replace(")", "")
+        return float(s)
     except: return 0.0
 
-def kpi_card(label, value, icon, sub_html="", bar_color="#3B7DD8"):
-    return f'<div class="kpi-wrap"><div class="kpi-accent-bar" style="background:{bar_color}"></div><span class="kpi-icon">{icon}</span><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-sub">{sub_html}</div></div>'
-
-def sec(title, icon=""): return f'<div class="sec-header"><span>{icon}</span>{title}</div>'
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 3 · DATA PIPELINE
-# ══════════════════════════════════════════════════════════════════════════════
-def parse_one(src, skiprows=9):
-    df = pd.read_csv(src, skiprows=skiprows)
-    df = df[df["AGENT"].notna()].copy()
-    for col in FIN_COLS:
-        if col in df.columns: df[col] = df[col].apply(clean_num)
-    if "ACTIVE DAYS" in df.columns:
-        df["ACTIVE DAYS"] = pd.to_numeric(df["ACTIVE DAYS"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce").fillna(0).astype(int)
-    return df
-
+# 3. DATA INGESTION ENGINE
 @st.cache_data
-def load_data(payloads, default_path):
-    frames = []
-    if payloads:
-        for b in payloads: frames.append(parse_one(io.BytesIO(b)))
-    else:
-        try: frames.append(parse_one(default_path))
-        except: return None
-    return pd.concat(frames, ignore_index=True).drop_duplicates(subset=["AGENT"])
+def load_all_data(uploaded_files):
+    data_dict = {}
+    if not uploaded_files: return None
+    
+    # If the user uploads the Excel Workbook I generated
+    for file in uploaded_files:
+        if file.name.endswith('.xlsx'):
+            xls = pd.ExcelFile(file)
+            for sheet in xls.sheet_names:
+                data_dict[sheet] = pd.read_excel(file, sheet_name=sheet)
+        else:
+            # Handle individual CSVs by guessing content based on filename
+            name = file.name.lower()
+            df = pd.read_csv(file)
+            if 'sales' in name or 'running' in name: data_dict['Sales_Data'] = df
+            elif 'crm' in name: data_dict['CRM_Activity_Log'] = df
+            elif 'logistics' in name or 'visit' in name: data_dict['Logistics_Visits'] = df
+            elif 'inventory' in name: data_dict['Equipment_Inventory'] = df
+            elif 'inactive' in name or 'lifecycle' in name: data_dict['Agent_Lifecycle'] = df
+            
+    return data_dict
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 4 · APP LOGIC
-# ══════════════════════════════════════════════════════════════════════════════
+# 4. SIDEBAR & AUTHENTICATION
 with st.sidebar:
-    uploads = st.file_uploader("Upload CSVs", type=["csv"], accept_multiple_files=True)
-    df_raw = load_data(tuple([u.read() for u in uploads]), "GENERAL Q1 REPORT '26 - RUNNING TOTAL Q1 '26.csv")
+    st.title("🛡️ Secure Access")
+    user_role = st.selectbox("Your Role", ["Admin", "Region Manager", "SM", "Manager"])
+    node_name = st.text_input("Enter Node Name (e.g., EdoSM)", "ALL")
+    
+    st.markdown("---")
+    st.subheader("📁 Database Upload")
+    files = st.file_uploader("Upload iGaming OS Workbook (.xlsx or CSVs)", accept_multiple_files=True)
+    db = load_all_data(files)
 
-if df_raw is None:
-    st.error("Please upload data.")
+if not db:
+    st.warning("Please upload your database to activate the OS.")
     st.stop()
 
-# Profile Tree Filtering
-df_scope = df_raw.copy()
-sel_reg = st.sidebar.selectbox("Region", ["All"] + sorted(df_raw["REGION"].unique().tolist()))
-if sel_reg != "All": df_scope = df_scope[df_scope["REGION"] == sel_reg]
+# 5. HIERARCHY FILTERING LOGIC
+def filter_df(df):
+    if node_name == "ALL" or user_role == "Admin": return df
+    for col in ['REGION', 'SM', 'MANAGER', 'Region_Name', 'SM_Name', 'Manager_Name']:
+        if col.upper() in [c.upper() for c in df.columns]:
+            # Case insensitive match
+            return df[df[col].astype(str).str.contains(node_name, case=False, na=False)]
+    return df
 
-tab_exec, tab_prod, tab_quad, tab_lead = st.tabs(["📋 Scorecard", "🎮 Products", "🎯 Quadrant", "🏆 Leaders"])
+# Apply filters to all datasets
+sales = filter_df(db.get('Sales_Data', pd.DataFrame()))
+crm = filter_df(db.get('CRM_Activity_Log', pd.DataFrame()))
+logistics = filter_df(db.get('Logistics_Visits', pd.DataFrame()))
+inventory = filter_df(db.get('Equipment_Inventory', pd.DataFrame()))
+lifecycle = filter_df(db.get('Agent_Lifecycle', pd.DataFrame()))
 
-# --- TAB EXEC ---
-with tab_exec:
-    st.markdown(sec("Q1 Performance", "📊"), unsafe_allow_html=True)
-    s1, s2, s3 = st.columns(3)
-    s1.write(kpi_card("Sales", ngn(df_scope["SALES"].sum()), "💰"), unsafe_allow_html=True)
-    s2.write(kpi_card("Net Profit", ngn(df_scope["NET"].sum()), "📈"), unsafe_allow_html=True)
-    s3.write(kpi_card("GGR", ngn(df_scope["GGR"].sum()), "🎰"), unsafe_allow_html=True)
+# 6. APP MODULES (TABS)
+tabs = st.tabs(["📊 Sales", "🕵️ Lifecycle", "📞 CRM", "🚚 Logistics", "📦 Inventory"])
 
-# --- TAB QUADRANT (FIXED) ---
-with tab_quad:
-    st.markdown(sec("Profitability Quadrant Analysis", "🎯"), unsafe_allow_html=True)
+# MODULE 1: SALES & EXECUTIVE SCORECARD
+with tabs[0]:
+    st.header("Executive Sales Dashboard")
+    target = 40319855100
+    actual = sales['Sales_Amount'].sum() if 'Sales_Amount' in sales.columns else 0
     
-    # Data Cleaning for Chart
-    plot_df = df_scope[df_scope["STATUS"] == "ACTIVE"].copy()
-    plot_df['SALES'] = pd.to_numeric(plot_df['SALES'], errors='coerce').fillna(0)
-    plot_df['NET'] = pd.to_numeric(plot_df['NET'], errors='coerce').fillna(0)
-    
-    if plot_df.empty:
-        st.warning("No active agents found in this scope.")
-    else:
-        # Calculate Quadrants
-        m_sales, m_net = plot_df["SALES"].median(), plot_df["NET"].median()
-        def get_q(r):
-            if r["SALES"] >= m_sales and r["NET"] >= m_net: return "⭐ Star"
-            if r["SALES"] >= m_sales: return "⚡ High Vol"
-            if r["NET"] >= m_net: return "💎 Efficient"
-            return "⚠️ Underperformer"
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total Sales", ngn(actual))
+    k2.metric("Target Progress", f"{(actual/target)*100:.1f}%")
+    k3.metric("Net Profit", ngn(sales['Net_Profit'].sum() if 'Net_Profit' in sales.columns else 0))
+    k4.metric("GGR", ngn(sales['GGR'].sum() if 'GGR' in sales.columns else 0))
+
+    # Scatter Plot (Safe Version)
+    if not sales.empty and 'Sales_Amount' in sales.columns:
+        st.subheader("Profitability Quadrant Analysis")
+        plot_df = sales.copy()
+        plot_df['Size'] = plot_df['Sales_Amount'].clip(lower=1)
+        fig_q = px.scatter(plot_df, x="Sales_Amount", y="Net_Profit", size="Size", 
+                          hover_name="Agent_Username", template="plotly_dark",
+                          color_discrete_sequence=[PALETTE['accent']])
+        fig_q.update_layout(**PLOTLY_TEMPLATE['layout'])
+        st.plotly_chart(fig_q, use_container_width=True)
+
+# MODULE 2: AGENT LIFECYCLE (CHURN & NEW)
+with tabs[1]:
+    st.header("Agent Retention & Onboarding")
+    if not lifecycle.empty:
+        lost = lifecycle[lifecycle['Status'].str.contains('Inactive|Lost', na=False, case=False)]
+        new = lifecycle[lifecycle['Status'].str.contains('New', na=False, case=False)]
         
-        plot_df["Quadrant"] = plot_df.apply(get_q, axis=1)
-        plot_df["Size_Val"] = plot_df["SALES"].clip(lower=1)
+        c1, c2 = st.columns(2)
+        c1.markdown(f"### 💤 Churn Analysis")
+        c1.metric("Lost Agents", len(lost))
+        c1.metric("Value Lost", ngn(lost['Peak_Monthly_Sales'].sum()))
+        
+        c2.markdown(f"### 🌟 New Onboarding")
+        c2.metric("New Agents", len(new))
+        c2.metric("New Sales Contrib.", ngn(new['Peak_Monthly_Sales'].sum()))
+        
+        st.subheader("Top 10 High-Value Lost Agents")
+        st.table(lost.nlargest(10, 'Peak_Monthly_Sales')[['Agent_Username', 'Peak_Monthly_Sales', 'Total_Active_Days']])
 
-        fig_q = px.scatter(
-            plot_df, x="SALES", y="NET", color="Quadrant", size="Size_Val",
-            hover_name="AGENT", title="Sales vs Profit Intelligence",
-            template="plotly_dark", labels={"SALES": "Sales (₦)", "NET": "Profit (₦)"}
-        )
-        fig_q.add_vline(x=m_sales, line_dash="dash", line_color="#4A5568")
-        fig_q.add_hline(y=m_net, line_dash="dash", line_color="#4A5568")
-        st.plotly_chart(apply_theme(fig_q, 500), use_container_width=True)
+# MODULE 3: CRM & TASK MANAGEMENT
+with tabs[2]:
+    st.header("CRM Performance & Assignments")
+    if not crm.empty:
+        calls = len(crm)
+        answered = len(crm[crm['Call_Status'] == 'Answered'])
+        
+        st.columns(3)[0].metric("Total Calls", calls)
+        st.columns(3)[1].metric("Answer Rate", f"{(answered/calls)*100:.1f}%")
+        st.columns(3)[2].metric("Pending Tasks", len(crm[crm['Task_Status'] == 'Pending']))
+        
+        st.subheader("CRM Feedback Stream")
+        st.dataframe(crm[['Timestamp', 'Agent_Username', 'Conversation_Summary', 'Task_Status', 'Task_Assigned_To']], use_container_width=True)
 
-# --- TAB LEADERS ---
-with tab_lead:
-    st.markdown(sec("Top Performers", "🏆"), unsafe_allow_html=True)
-    st.dataframe(df_scope.nlargest(10, "NET")[["AGENT", "MANAGER", "SALES", "NET"]], use_container_width=True)
+# MODULE 4: LOGISTICS & FIELD OPS
+with tabs[3]:
+    st.header("Field Visits & Expense Tracking")
+    with st.expander("📝 Log New Field Visit"):
+        with st.form("visit_form"):
+            v1, v2 = st.columns(2)
+            agent_v = v1.text_input("Agent Username")
+            reason_v = v2.selectbox("Reason", ["Routine", "Technical", "Churn Recovery", "Training"])
+            feedback_v = st.text_area("Visit Feedback")
+            spend_v = st.number_input("Amount Spent (₦)", min_value=0)
+            if st.form_submit_button("Submit Visit"):
+                st.success(f"Visit for {agent_v} logged and ₦{spend_v} deducted from budget.")
 
-st.sidebar.caption("v2.1 Production Fix")
+    if not logistics.empty:
+        st.subheader("Recent Field Reports")
+        st.dataframe(logistics[['Date', 'Agent_Username', 'Reason_for_Visit', 'Shop_Rating', 'Expense_Amount_Spent']], use_container_width=True)
+
+# MODULE 5: EQUIPMENT INVENTORY
+with tabs[4]:
+    st.header("Asset & Inventory Tracking")
+    if not inventory.empty:
+        low_stock = inventory[inventory['Condition'] == 'Faulty'] # Or add a 'Stock' column
+        st.error(f"⚠️ Critical Alert: {len(low_stock)} Faulty Units Reported")
+        
+        st.subheader("Inventory Distribution")
+        fig_inv = px.pie(inventory, names='Equipment_Category', title="Equipment by Category", hole=0.5)
+        fig_inv.update_layout(**PLOTLY_TEMPLATE['layout'])
+        st.plotly_chart(fig_inv)
+        
+        st.subheader("Full Asset Log")
+        st.dataframe(inventory, use_container_width=True)
