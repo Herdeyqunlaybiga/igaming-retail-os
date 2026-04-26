@@ -24,6 +24,15 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+PLOTLY_TEMPLATE = {
+    "layout": {
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "font": {"color": "#e2e8f0"},
+        "margin": {"l": 10, "r": 10, "t": 40, "b": 10}
+    }
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 0 · PAGE BOOTSTRAP
 # ══════════════════════════════════════════════════════════════════════════════
