@@ -1001,17 +1001,21 @@ with tab_quadrant:
             "⚠️ Underperformers":          PALETTE["accent_red"],
         }
 
-        fig_scatter = px.scatter(
-            active_q,
-            x="SALES", y="NET",
-            color="Quadrant",
-            color_discrete_map=q_colors,
-            size="GGR",
-            size_max=35,
-            hover_data={"AGENT": True, "REGION": True, "SM": True,
-                        "SALES": ":,.0f", "NET": ":,.0f", "GGR": ":,.0f"},
-            title="Profitability Quadrant — Sales vs Net Profit (bubble size = GGR)",
-            labels={"SALES": "Total Sales (₦)", "NET": "Net Profit (₦)"},
+        if not active_q.empty:
+    fig_scatter = px.scatter(
+        active_q.dropna(subset=['SALES', 'NET']),
+        x="SALES",
+        y="NET",
+        text="AGENT",
+        size=active_q["SALES"].clip(lower=1), # Prevents size errors
+        title="Profit vs Sales Intelligence",
+        template="plotly_dark",
+        labels={"SALES": "Total Sales (₦)", "NET": "Net Profit (₦)"},
+    )
+    fig_scatter.update_traces(textposition='top center')
+    st.plotly_chart(fig_scatter, use_container_width=True)
+else:
+    st.warning("No data available for the scatter plot analysis.")
         )
 
         # Quadrant dividers
