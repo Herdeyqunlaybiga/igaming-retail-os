@@ -791,8 +791,13 @@ with tab_exec:
             title={"text": "Q1 Sales vs ₦40.3B Target",
                    "font": {"color": PALETTE["text_secondary"], "size": 13}},
         ))
-        fig_g.update_layout(**PLOTLY_TEMPLATE["layout"], height=300,
-                            margin=dict(l=20, r=20, t=60, b=10))
+        fig_g.update_layout(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font={"color": "#e2e8f0"},
+    height=300,
+    margin=dict(l=20, r=20, t=60, b=10)
+)
         st.plotly_chart(fig_g, use_container_width=True)
 
     with region_col:
