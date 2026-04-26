@@ -7,22 +7,14 @@ import re
 import io
 
 # 1. PAGE CONFIG & THEME
-st.set_page_config(page_title="iGaming Retail OS | Q1 2026", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="iGaming Retail OS | Executive View", layout="wide", page_icon="🏦")
 
-# Professional Design System
+# Industrial Design System
 PALETTE = {
     "bg": "#070B14", "card": "#0D1525", "border": "#1E2D45",
     "text": "#E8EDF5", "muted": "#7A8BAD", "accent": "#3B7DD8",
     "green": "#22C55E", "red": "#EF4444", "amber": "#F59E0B"
 }
-
-# Fixed Plotly Template to prevent previous errors
-PLOTLY_TEMPLATE = dict(
-    layout=dict(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=PALETTE["text"]), margin=dict(l=10, r=10, t=40, b=10)
-    )
-)
 
 st.markdown(f"""
     <style>
@@ -36,161 +28,164 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. HELPERS
-def ngn(v):
-    if pd.isna(v): return "₦0"
-    if abs(v) >= 1e9: return f"₦{v/1e9:,.2f}B"
-    if abs(v) >= 1e6: return f"₦{v/1e6:,.1f}M"
-    return f"₦{v:,.0f}"
-
-def clean_fin(val):
-    try:
-        s = re.sub(r"[₦,%↑↓\s]", "", str(val)).replace("(", "-").replace(")", "")
-        return float(s)
+# 2. ROBUST DATA CLEANING ENGINE
+def clean_currency(val):
+    if pd.isna(val) or str(val).strip() == "": return 0.0
+    # Handle symbols, commas, and negative signs like -₦60.00 or (₦60.00)
+    s = str(val).replace('₦', '').replace(',', '').replace(' ', '')
+    s = re.sub(r'\(', '-', s).replace(')', '')
+    try: return float(s)
     except: return 0.0
 
-# 3. DATA INGESTION ENGINE
+def ngn(v):
+    if pd.isna(v) or v == 0: return "₦0"
+    neg = "-" if v < 0 else ""
+    v = abs(v)
+    if v >= 1e9: return f"{neg}₦{v/1e9:,.2f}B"
+    if v >= 1e6: return f"{neg}₦{v/1e6:,.1f}M"
+    return f"{neg}₦{v:,.0f}"
+
+# 3. ADVANCED DATA INGESTION
 @st.cache_data
-def load_all_data(uploaded_files):
-    data_dict = {}
+def process_igaming_data(uploaded_files):
     if not uploaded_files: return None
     
-    # If the user uploads the Excel Workbook I generated
-    for file in uploaded_files:
-        if file.name.endswith('.xlsx'):
-            xls = pd.ExcelFile(file)
-            for sheet in xls.sheet_names:
-                data_dict[sheet] = pd.read_excel(file, sheet_name=sheet)
-        else:
-            # Handle individual CSVs by guessing content based on filename
-            name = file.name.lower()
-            df = pd.read_csv(file)
-            if 'sales' in name or 'running' in name: data_dict['Sales_Data'] = df
-            elif 'crm' in name: data_dict['CRM_Activity_Log'] = df
-            elif 'logistics' in name or 'visit' in name: data_dict['Logistics_Visits'] = df
-            elif 'inventory' in name: data_dict['Equipment_Inventory'] = df
-            elif 'inactive' in name or 'lifecycle' in name: data_dict['Agent_Lifecycle'] = df
-            
-    return data_dict
+    all_frames = []
+    for f in uploaded_files:
+        # Check if Excel or CSV
+        if f.name.endswith('.xlsx'):
+            return pd.read_excel(f, sheet_name=None) # Returns a dict of dataframes
+        
+        # Robust CSV Skip logic (detects Running Total vs Others)
+        header_peek = pd.read_csv(f, nrows=10, header=None)
+        skip = 9 if "TARGET" in str(header_peek.iloc[0,0]) else 4
+        f.seek(0)
+        df = pd.read_csv(f, skiprows=skip)
+        
+        # Clean Columns
+        df.columns = [c.strip().upper() for c in df.columns]
+        # Remove regional 'Total' rows to prevent double counting
+        if 'AGENT' in df.columns:
+            df = df[df['AGENT'].notna() & ~df['AGENT'].str.contains('Total', case=False, na=False)]
+        
+        all_frames.append(df)
+    
+    master = pd.concat(all_frames, ignore_index=True)
+    
+    # Critical Numeric Transformation
+    fin_cols = ['SALES', 'GGR', 'NGR', 'NET', 'COMMISSION', 'DEPOSITS', 'WITHDRAWALS', 'EXPENSES',
+                'SB SALES', 'SB GGR', 'LB SALES', 'LB GGR', 'GB SALES', 'GB GGR', 'GR SALES', 'GR GGR']
+    
+    for col in fin_cols:
+        if col in master.columns:
+            master[col] = master[col].apply(clean_currency)
+    
+    if 'ACTIVE DAYS' in master.columns:
+        master['ACTIVE DAYS'] = pd.to_numeric(master['ACTIVE DAYS'], errors='coerce').fillna(0)
+        
+    return {"Sales_Data": master}
 
-# 4. SIDEBAR & AUTHENTICATION
+# 4. SIDEBAR & HIERARCHY FILTERS
 with st.sidebar:
-    st.title("🛡️ Secure Access")
-    user_role = st.selectbox("Your Role", ["Admin", "Region Manager", "SM", "Manager"])
-    node_name = st.text_input("Enter Node Name (e.g., EdoSM)", "ALL")
+    st.title("🏦 Retail OS Login")
+    user_role = st.selectbox("Role", ["Super Admin", "Regional Dir", "SM", "Manager"])
     
     st.markdown("---")
-    st.subheader("📁 Database Upload")
-    files = st.file_uploader("Upload iGaming OS Workbook (.xlsx or CSVs)", accept_multiple_files=True)
-    db = load_all_data(files)
+    st.subheader("📁 Database Sync")
+    files = st.file_uploader("Upload Q1 CSVs or Master Workbook", accept_multiple_files=True)
+    db = process_igaming_data(files)
 
 if not db:
-    st.warning("Please upload your database to activate the OS.")
+    st.info("👋 Welcome. Please upload the Q1 Sales CSV to initialize the Intelligence Engine.")
     st.stop()
 
-# 5. HIERARCHY FILTERING LOGIC
-def filter_df(df):
-    if node_name == "ALL" or user_role == "Admin": return df
-    for col in ['REGION', 'SM', 'MANAGER', 'Region_Name', 'SM_Name', 'Manager_Name']:
-        if col.upper() in [c.upper() for c in df.columns]:
-            # Case insensitive match
-            return df[df[col].astype(str).str.contains(node_name, case=False, na=False)]
-    return df
+# Get Master Sales DF
+sales_df = db.get('Sales_Data', pd.DataFrame())
 
-# Apply filters to all datasets
-sales = filter_df(db.get('Sales_Data', pd.DataFrame()))
-crm = filter_df(db.get('CRM_Activity_Log', pd.DataFrame()))
-logistics = filter_df(db.get('Logistics_Visits', pd.DataFrame()))
-inventory = filter_df(db.get('Equipment_Inventory', pd.DataFrame()))
-lifecycle = filter_df(db.get('Agent_Lifecycle', pd.DataFrame()))
+# Profile Tree Hierarchy Selection
+st.sidebar.markdown("### 🌳 Profile Tree Filter")
+regions = sorted(sales_df['REGION'].unique()) if 'REGION' in sales_df.columns else []
+sel_region = st.sidebar.selectbox("Select Region", ["ALL"] + regions)
 
-# 6. APP MODULES (TABS)
-tabs = st.tabs(["📊 Sales", "🕵️ Lifecycle", "📞 CRM", "🚚 Logistics", "📦 Inventory"])
+filtered_df = sales_df.copy()
+if sel_region != "ALL":
+    filtered_df = filtered_df[filtered_df['REGION'] == sel_region]
+    sms = sorted(filtered_df['SM'].unique())
+    sel_sm = st.sidebar.selectbox("Select SM", ["ALL"] + sms)
+    if sel_sm != "ALL":
+        filtered_df = filtered_df[filtered_df['SM'] == sel_sm]
+        mgrs = sorted(filtered_df['MANAGER'].unique())
+        sel_mgr = st.sidebar.selectbox("Select Manager", ["ALL"] + mgrs)
+        if sel_mgr != "ALL":
+            filtered_df = filtered_df[filtered_df['MANAGER'] == sel_mgr]
 
-# MODULE 1: SALES & EXECUTIVE SCORECARD
-with tabs[0]:
-    st.header("Executive Sales Dashboard")
+# 5. MAIN INTERFACE
+st.title("🚀 iGaming Retail Management OS")
+st.markdown(f"**Live Scope:** {sel_region} Hierarchy | **Agents in View:** {len(filtered_df)}")
+
+# Tabs for Holistic Management
+tab_sales, tab_products, tab_lifecycle, tab_crm, tab_logistics = st.tabs([
+    "📈 Sales Performance", "🎮 Product Mix", "🕵️ Agent Lifecycle", "📞 CRM Activity", "🚚 Field Ops"
+])
+
+# MODULE 1: SALES & EXECUTIVE KPIs
+with tab_sales:
     target = 40319855100
-    actual = sales['Sales_Amount'].sum() if 'Sales_Amount' in sales.columns else 0
+    actual = filtered_df['SALES'].sum()
     
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total Sales", ngn(actual))
-    k2.metric("Target Progress", f"{(actual/target)*100:.1f}%")
-    k3.metric("Net Profit", ngn(sales['Net_Profit'].sum() if 'Net_Profit' in sales.columns else 0))
-    k4.metric("GGR", ngn(sales['GGR'].sum() if 'GGR' in sales.columns else 0))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Sales", ngn(actual), f"{(actual/target)*100:.1f}% of Target")
+    c2.metric("GGR (Gross)", ngn(filtered_df['GGR'].sum()))
+    c3.metric("Net Profit", ngn(filtered_df['NET'].sum()))
+    c4.metric("Operations Expense", ngn(filtered_df['EXPENSES'].sum()), delta_color="inverse")
 
-    # Scatter Plot (Safe Version)
-    if not sales.empty and 'Sales_Amount' in sales.columns:
-        st.subheader("Profitability Quadrant Analysis")
-        plot_df = sales.copy()
-        plot_df['Size'] = plot_df['Sales_Amount'].clip(lower=1)
-        fig_q = px.scatter(plot_df, x="Sales_Amount", y="Net_Profit", size="Size", 
-                          hover_name="Agent_Username", template="plotly_dark",
-                          color_discrete_sequence=[PALETTE['accent']])
-        fig_q.update_layout(**PLOTLY_TEMPLATE['layout'])
-        st.plotly_chart(fig_q, use_container_width=True)
+    # Sales vs Profit Scatter
+    st.subheader("🎯 Profitability Quadrant")
+    plot_df = filtered_df[filtered_df['SALES'] > 0].copy()
+    plot_df['Size'] = plot_df['SALES'].clip(lower=1)
+    fig_q = px.scatter(plot_df, x="SALES", y="NET", size="Size", hover_name="AGENT",
+                      color="SM" if sel_region != "ALL" else "REGION",
+                      template="plotly_dark", title="Sales Volume vs. Net Profitability")
+    st.plotly_chart(fig_q, use_container_width=True)
 
-# MODULE 2: AGENT LIFECYCLE (CHURN & NEW)
-with tabs[1]:
-    st.header("Agent Retention & Onboarding")
-    if not lifecycle.empty:
-        lost = lifecycle[lifecycle['Status'].str.contains('Inactive|Lost', na=False, case=False)]
-        new = lifecycle[lifecycle['Status'].str.contains('New', na=False, case=False)]
-        
-        c1, c2 = st.columns(2)
-        c1.markdown(f"### 💤 Churn Analysis")
-        c1.metric("Lost Agents", len(lost))
-        c1.metric("Value Lost", ngn(lost['Peak_Monthly_Sales'].sum()))
-        
-        c2.markdown(f"### 🌟 New Onboarding")
-        c2.metric("New Agents", len(new))
-        c2.metric("New Sales Contrib.", ngn(new['Peak_Monthly_Sales'].sum()))
-        
-        st.subheader("Top 10 High-Value Lost Agents")
-        st.table(lost.nlargest(10, 'Peak_Monthly_Sales')[['Agent_Username', 'Peak_Monthly_Sales', 'Total_Active_Days']])
+# MODULE 2: PRODUCT ENGINE (SB, LB, GB, GR)
+with tab_products:
+    st.header("Product Performance Breakdown")
+    prod_metrics = []
+    for p in ['SB', 'LB', 'GB', 'GR']:
+        s_col, g_col = f'{p} SALES', f'{p} GGR'
+        if s_col in filtered_df.columns:
+            prod_metrics.append({"Product": p, "Sales": filtered_df[s_col].sum(), "GGR": filtered_df[g_col].sum()})
+    
+    p_df = pd.DataFrame(prod_metrics)
+    
+    col_l, col_r = st.columns(2)
+    fig_pie = px.pie(p_df, values='Sales', names='Product', hole=0.5, title="Sales Contribution by Product")
+    col_l.plotly_chart(fig_pie, use_container_width=True)
+    
+    fig_bar = px.bar(p_df, x='Product', y='Sales', color='Product', title="Total Sales per Product Category")
+    col_r.plotly_chart(fig_bar, use_container_width=True)
 
-# MODULE 3: CRM & TASK MANAGEMENT
-with tabs[2]:
-    st.header("CRM Performance & Assignments")
-    if not crm.empty:
-        calls = len(crm)
-        answered = len(crm[crm['Call_Status'] == 'Answered'])
+# MODULE 3: AGENT LIFECYCLE & RISK
+with tab_lifecycle:
+    st.header("Retention & Risk Analysis")
+    if 'STATUS' in filtered_df.columns:
+        inactive = filtered_df[filtered_df['STATUS'] == 'INACTIVE']
+        st.error(f"⚠️ {len(inactive)} Inactive Agents found in current tree.")
         
-        st.columns(3)[0].metric("Total Calls", calls)
-        st.columns(3)[1].metric("Answer Rate", f"{(answered/calls)*100:.1f}%")
-        st.columns(3)[2].metric("Pending Tasks", len(crm[crm['Task_Status'] == 'Pending']))
-        
-        st.subheader("CRM Feedback Stream")
-        st.dataframe(crm[['Timestamp', 'Agent_Username', 'Conversation_Summary', 'Task_Status', 'Task_Assigned_To']], use_container_width=True)
+        st.subheader("Top 10 High-Value Lost Agents (by Last Sales)")
+        st.table(inactive.nlargest(10, 'SALES')[['AGENT', 'MANAGER', 'SALES', 'ACTIVE DAYS']])
 
-# MODULE 4: LOGISTICS & FIELD OPS
-with tabs[3]:
-    st.header("Field Visits & Expense Tracking")
-    with st.expander("📝 Log New Field Visit"):
-        with st.form("visit_form"):
-            v1, v2 = st.columns(2)
-            agent_v = v1.text_input("Agent Username")
-            reason_v = v2.selectbox("Reason", ["Routine", "Technical", "Churn Recovery", "Training"])
-            feedback_v = st.text_area("Visit Feedback")
-            spend_v = st.number_input("Amount Spent (₦)", min_value=0)
-            if st.form_submit_button("Submit Visit"):
-                st.success(f"Visit for {agent_v} logged and ₦{spend_v} deducted from budget.")
+# MODULE 4 & 5: CRM & LOGISTICS (Placeholders or from Workbook)
+with tab_crm:
+    st.header("CRM Call Intelligence")
+    st.info("Connect 'CRM_Activity_Log' sheet to view real-time call performance and assigned tasks.")
+    # If the sheet exists in db, display it
+    if "CRM_Activity_Log" in db:
+        st.dataframe(filter_df(db["CRM_Activity_Log"]))
 
-    if not logistics.empty:
-        st.subheader("Recent Field Reports")
-        st.dataframe(logistics[['Date', 'Agent_Username', 'Reason_for_Visit', 'Shop_Rating', 'Expense_Amount_Spent']], use_container_width=True)
-
-# MODULE 5: EQUIPMENT INVENTORY
-with tabs[4]:
-    st.header("Asset & Inventory Tracking")
-    if not inventory.empty:
-        low_stock = inventory[inventory['Condition'] == 'Faulty'] # Or add a 'Stock' column
-        st.error(f"⚠️ Critical Alert: {len(low_stock)} Faulty Units Reported")
-        
-        st.subheader("Inventory Distribution")
-        fig_inv = px.pie(inventory, names='Equipment_Category', title="Equipment by Category", hole=0.5)
-        fig_inv.update_layout(**PLOTLY_TEMPLATE['layout'])
-        st.plotly_chart(fig_inv)
-        
-        st.subheader("Full Asset Log")
-        st.dataframe(inventory, use_container_width=True)
+with tab_logistics:
+    st.header("Field Visit & Logistics Management")
+    st.info("Logistics tracking requires the 'Logistics_Visits' sheet from your Retail OS Workbook.")
+    if "Logistics_Visits" in db:
+        st.dataframe(filter_df(db["Logistics_Visits"]))
