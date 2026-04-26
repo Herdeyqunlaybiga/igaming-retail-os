@@ -1001,16 +1001,32 @@ with tab_quadrant:
             "⚠️ Underperformers":          PALETTE["accent_red"],
         }
 
-        if not active_q.empty:
+        # Create a clean copy to prevent errors
+scatter_df = active_q.copy()
+
+# Ensure columns are numbers and remove empty rows
+scatter_df['SALES'] = pd.to_numeric(scatter_df['SALES'], errors='coerce').fillna(0)
+scatter_df['NET'] = pd.to_numeric(scatter_df['NET'], errors='coerce').fillna(0)
+
+# Safety check: Plotly crashes if 'size' is 0 or negative. 
+# We create a display column where the minimum size is 1.
+scatter_df['Size_For_Plot'] = scatter_df['SALES'].clip(lower=1)
+
+if not scatter_df.empty:
     fig_scatter = px.scatter(
-        active_q.dropna(subset=['SALES', 'NET']),
+        scatter_df,
         x="SALES",
         y="NET",
-        text="AGENT",
-        size=active_q["SALES"].clip(lower=1), # Prevents size errors
+        size="Size_For_Plot", 
+        hover_name="AGENT",
+        color_discrete_sequence=["#00d4ff"], # Uses a stable color
         title="Profit vs Sales Intelligence",
         template="plotly_dark",
         labels={"SALES": "Total Sales (₦)", "NET": "Net Profit (₦)"},
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
+else:
+    st.info("No data available to display the scatter chart.")
     )
     fig_scatter.update_traces(textposition='top center')
     st.plotly_chart(fig_scatter, use_container_width=True)
